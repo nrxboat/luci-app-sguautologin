@@ -1,0 +1,29 @@
+{
+	"admin/network/sguautologin": {
+		"title": "校园网自动登录",
+		"order": 90,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-sguautologin" ],
+			"uci": { "sguautologin": true }
+		}
+	},
+	"admin/network/sguautologin/settings": {
+		"title": "设置",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "sguautologin/settings"
+		}
+	},
+	"admin/network/sguautologin/log": {
+		"title": "日志",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "sguautologin/log"
+		}
+	}
+}

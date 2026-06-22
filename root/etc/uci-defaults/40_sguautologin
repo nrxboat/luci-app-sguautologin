@@ -1,0 +1,14 @@
+#!/bin/sh
+
+uci -q batch <<-EOF >/dev/null
+	delete ucitrack.@sguautologin[-1]
+	add ucitrack sguautologin
+	set ucitrack.@sguautologin[-1].init=sguautologin
+	commit ucitrack
+EOF
+
+[ -e "/etc/init.d/sguautologin" ] && chmod a+x /etc/init.d/sguautologin >/dev/null 2>&1
+[ -e "/usr/sbin/sguautologin_script" ] && chmod a+x /usr/sbin/sguautologin_script >/dev/null 2>&1
+
+rm -f /tmp/luci-indexcache
+exit 0

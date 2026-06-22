@@ -1,0 +1,22 @@
+{
+	"luci-app-sguautologin": {
+		"description": "Grant access to SGU Auto-Login configuration and logs",
+		"read": {
+			"uci": [ "sguautologin" ],
+			"ubus": {
+				"service": [ "list" ]
+			},
+			"file": {
+				"/var/log/sguautologin.log": [ "read" ],
+				"/sbin/logread -e sguautologin": [ "exec" ],
+				"/usr/sbin/logread -e sguautologin": [ "exec" ]
+			}
+		},
+		"write": {
+			"uci": [ "sguautologin" ],
+			"file": {
+				"/var/log/sguautologin.log": [ "write" ]
+			}
+		}
+	}
+}

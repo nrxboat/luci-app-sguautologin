@@ -1,0 +1,254 @@
+#!/bin/sh
+# SGU Campus Network Auto-Login Script
+# Based on https://github.com/IDeLoveYou/SGU-Script
+# Adapted for OpenWrt procd service management
+
+LOG_TAG="sguautologin"
+LOG_FILE="/var/log/sguautologin.log"
+
+# Default values
+USERNAME=""
+PASSWORD=""
+AUTH_URL="http://172.16.253.121/quickauth.do"
+CHECK_URL="http://2.2.2.2"
+NIGHT_MODE=0
+NET_START=600
+NET_END=2400
+CHECK_INTERVAL=5
+LOGGER_INTERVAL=600
+
+# Parse command line arguments
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--username)
+			USERNAME="$2"
+			shift 2
+			;;
+		--password)
+			PASSWORD="$2"
+			shift 2
+			;;
+		--auth-url)
+			AUTH_URL="$2"
+			shift 2
+			;;
+		--check-url)
+			CHECK_URL="$2"
+			shift 2
+			;;
+		--night-mode)
+			NIGHT_MODE="$2"
+			shift 2
+			;;
+		--net-start)
+			NET_START="$2"
+			shift 2
+			;;
+		--net-end)
+			NET_END="$2"
+			shift 2
+			;;
+		--check-interval)
+			CHECK_INTERVAL="$2"
+			shift 2
+			;;
+		--logger-interval)
+			LOGGER_INTERVAL="$2"
+			shift 2
+			;;
+		*)
+			shift
+			;;
+	esac
+done
+
+# Extract string between two delimiters
+sub_between() {
+	tmp="${1#*"$2"}"
+	echo "${tmp%"$3"*}"
+}
+
+# Log function
+log() {
+	local msg="$1"
+	echo "$(date '+%Y-%m-%d %H:%M:%S'): $msg" >> "$LOG_FILE"
+	logger -t "$LOG_TAG" "$msg"
+}
+
+# Try to sync time first
+sync_time() {
+	local retry=0
+	while [ $retry -lt 30 ]; do
+		if ping -c 1 -W 2 www.baidu.com >/dev/null 2>&1; then
+			ntpd -n -q -p ntp.aliyun.com 2>/dev/null
+			log "时间同步完成"
+			return 0
+		fi
+		retry=$((retry + 1))
+		sleep 2
+	done
+	log "时间同步失败，继续尝试登录"
+}
+
+# Login authentication
+do_login() {
+	if ping -c 2 -W 2 www.baidu.com >/dev/null 2>&1; then
+		return 1
+	fi
+
+	# Try curl first, fall back to wget
+	local redirect=""
+	if command -v curl >/dev/null 2>&1; then
+		redirect=$(curl -v -s "$CHECK_URL" 2>&1)
+	elif command -v wget >/dev/null 2>&1; then
+		redirect=$(wget -S "$CHECK_URL" -qO- 2>&1)
+	else
+		log "错误: 未安装 curl 或 wget"
+		return 0
+	fi
+
+	local ip=$(sub_between "$redirect" "wlanuserip=" "&wlanacname")
+	local wlan=$(sub_between "$redirect" "wlanacname=" "&mac")
+
+	if [ -z "$ip" ] || [ -z "$wlan" ]; then
+		log "获取 wlanuserip 或 wlanacname 失败"
+		return 0
+	fi
+
+	local response=""
+	if command -v curl >/dev/null 2>&1; then
+		response=$(curl -s -X GET "${AUTH_URL}?userid=${USERNAME}&passwd=${PASSWORD}&wlanuserip=${ip}&wlanacname=${wlan}")
+	elif command -v wget >/dev/null 2>&1; then
+		response=$(wget "${AUTH_URL}?userid=${USERNAME}&passwd=${PASSWORD}&wlanuserip=${ip}&wlanacname=${wlan}" -qO-)
+	fi
+
+	if [ -z "$response" ]; then
+		log "认证服务器无响应，请检查网线或网络配置"
+		return 0
+	fi
+
+	local result=$(sub_between "$response" 'message":"' '","wlanacIp')
+
+	if [ "$result" = "认证成功" ]; then
+		log "锐捷网页认证成功"
+	else
+		# Parse error messages
+		case "$result" in
+			*"不正确"*)
+				log "认证失败: $result (请检查用户名和密码)"
+				;;
+			*"已认证通过"*)
+				log "认证信息: $result (账号已在线)"
+				;;
+			*"认证失败"*)
+				log "认证失败: $result (可能原因: 超时、夜间断网、账号未开通)"
+				;;
+			*"代理"*)
+				log "认证失败: $result (可能原因: 使用代理软件、桥接热点或腾讯系加速服务)"
+				;;
+			*)
+				log "认证信息: $result"
+				;;
+		esac
+	fi
+
+	return 0
+}
+
+# Keep alive UA2F if installed
+keep_alive_ua2f() {
+	if opkg list-installed 2>/dev/null | grep -q "ua2f"; then
+		if ! pgrep ua2f >/dev/null 2>&1; then
+			/etc/init.d/ua2f start 2>/dev/null
+			log "UA2F 已停止，正在重启"
+		fi
+	fi
+}
+
+# Clean log at midnight
+clean_log() {
+	local time_now=$(date '+%H%M')
+	if [ "$time_now" -eq "0000" ] || [ "$time_now" -eq "0005" ]; then
+		: > "$LOG_FILE"
+	fi
+}
+
+# Logger counter - reduce log spam
+time_count=0
+logger_half_interval=$((LOGGER_INTERVAL / 2))
+should_log() {
+	if [ "$time_count" -ge "$logger_half_interval" ]; then
+		time_count=0
+		return 0
+	else
+		time_count=$((time_count + 1))
+		return 1
+	fi
+}
+
+# ============================================================
+# Normal mode: periodic polling with time window restrictions
+# ============================================================
+main_loop() {
+	while true; do
+		keep_alive_ua2f
+		clean_log
+
+		local week_day=$(date +%w)
+		local time_now=$(date '+%H%M')
+
+		# Weekend: always check
+		if [ "$week_day" -eq 6 ] || [ "$week_day" -eq 0 ]; then
+			do_login
+		else
+			# Weekday: check within net supply time
+			if [ "$time_now" -ge "$NET_START" ] && [ "$time_now" -le "$NET_END" ]; then
+				do_login
+			fi
+		fi
+
+		sleep "$CHECK_INTERVAL"
+	done
+}
+
+# ============================================================
+# Night mode: event-driven, only login when network fails
+#             24/7 active, no time window restrictions
+# ============================================================
+night_main_loop() {
+	log "夜间不断网模式已启用，24小时随时检测断线重连"
+
+	while true; do
+		keep_alive_ua2f
+		clean_log
+
+		# Only login when ping fails (network disconnected)
+		if ! ping -c 2 -W 3 www.baidu.com >/dev/null 2>&1; then
+			log "检测到网络连接断开，正在尝试重新认证..."
+			do_login
+		fi
+
+		sleep 30
+	done
+}
+
+# ============================================================
+# Entry point
+# ============================================================
+log "校园网自动登录脚本启动 (用户: $USERNAME)"
+
+# Attempt initial login before syncing time
+if [ "$NIGHT_MODE" = "1" ]; then
+	do_login
+else
+	do_login
+fi
+
+sync_time
+sleep 5
+
+if [ "$NIGHT_MODE" = "1" ]; then
+	night_main_loop
+else
+	main_loop
+fi

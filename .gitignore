@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.ipk
+*.deb
+*.rpm
+build_dir/
+staging_dir/
+bin/
+tmp/
+
+# Git
+*.patch
+*.orig
