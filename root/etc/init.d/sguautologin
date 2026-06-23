@@ -11,20 +11,6 @@ LOG_FILE="/var/log/${NAME}.log"
 
 . /lib/functions.sh
 
-validate_section() {
-	uci_validate "$NAME" login "$1" \
-		'enabled:bool:0' \
-		'username:string' \
-		'password:string' \
-		'auth_url:string:http://172.16.253.121/quickauth.do' \
-		'check_url:string:http://2.2.2.2' \
-		'night_mode:bool:0' \
-		'net_start:uinteger:600' \
-		'net_end:uinteger:2400' \
-		'check_interval:uinteger:5' \
-		'logger_interval:uinteger:600'
-}
-
 section_enabled() {
 	config_get_bool enabled "$1" 'enabled' 0
 	[ "$enabled" -eq 1 ]
@@ -33,15 +19,20 @@ section_enabled() {
 start_instance() {
 	local cfg="$1"
 
-	local enabled username password auth_url check_url
+	section_enabled "$cfg" || return 0
+
+	local username password auth_url check_url
 	local night_mode net_start net_end check_interval logger_interval
 
-	validate_section "$cfg" || {
-		logger -t "$NAME" "validation failed for section $cfg"
-		return 1
-	}
-
-	section_enabled "$cfg" || return 0
+	config_get username "$cfg" 'username'
+	config_get password "$cfg" 'password'
+	config_get auth_url "$cfg" 'auth_url'
+	config_get check_url "$cfg" 'check_url'
+	config_get_bool night_mode "$cfg" 'night_mode' 0
+	config_get net_start "$cfg" 'net_start' 600
+	config_get net_end "$cfg" 'net_end' 2400
+	config_get check_interval "$cfg" 'check_interval' 5
+	config_get logger_interval "$cfg" 'logger_interval' 600
 
 	[ -z "$username" ] && {
 		logger -t "$NAME" "username is not set, skipping"
