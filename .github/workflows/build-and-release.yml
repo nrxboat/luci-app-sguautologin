@@ -76,7 +76,7 @@ jobs:
       - name: Collect IPK artifacts
         run: |
           mkdir -p /tmp/artifacts-ipk
-          find "$SDK/bin" -name "*.ipk" -path "*/$PKG_NAME/*" -exec cp {} /tmp/artifacts-ipk/ \;
+          find "$SDK/bin" -type f -name "${PKG_NAME}_*.ipk" -exec cp {} /tmp/artifacts-ipk/ \;
           echo "Collected files:"
           ls -lh /tmp/artifacts-ipk/
 
@@ -141,7 +141,7 @@ jobs:
       - name: Collect APK artifacts
         run: |
           mkdir -p /tmp/artifacts-apk
-          find "$SDK/bin" -name "*.apk" -path "*/$PKG_NAME/*" -exec cp {} /tmp/artifacts-apk/ \;
+          find "$SDK/bin" -type f -name "${PKG_NAME}*.apk" -exec cp {} /tmp/artifacts-apk/ \;
           echo "Collected files:"
           ls -lh /tmp/artifacts-apk/
 
