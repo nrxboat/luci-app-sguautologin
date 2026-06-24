@@ -95,4 +95,8 @@ cat /var/log/sguautologin.log      # 应用日志
 
 ## 许可证
 
-GPL-3.0
+MIT License
+
+Copyright (c) 2024 nrxboat
+
+Based on [SGU-Script](https://github.com/IDeLoveYou/SGU-Script) Copyright (c) 2022 IDeLoveYou
